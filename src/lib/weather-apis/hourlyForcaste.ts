@@ -1,0 +1,1 @@
+const api ="https://geocoding-api.open-meteo.com/v1/search?name=Dhaka&count=10&language=en&format=json"
