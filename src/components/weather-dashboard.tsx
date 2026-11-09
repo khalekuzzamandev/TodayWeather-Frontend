@@ -672,7 +672,7 @@ export function WeatherDashboard() {
               : null}
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+          <section>
             <div className="glass-surface rounded-3xl border border-white/10 p-5">
               <div className="mb-5 flex items-center justify-between">
                 <div>
@@ -698,39 +698,10 @@ export function WeatherDashboard() {
               </div>
             </div>
 
-            <div className="glass-surface rounded-3xl border border-white/10 p-5">
-              <div className="mb-5 flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Highlights</p>
-                  <h2 className="mt-2 text-xl font-semibold text-white">Today</h2>
-                </div>
-                <Zap className="h-4 w-4 text-amber-300" />
-              </div>
-              {weather ? (
-                <div className="space-y-3 text-sm text-slate-200">
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2">
-                    <span>UV Index</span>
-                    <span>{weather.current.uvIndex ?? "—"}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2">
-                    <span>Pressure</span>
-                    <span>{formatPressure(weather.current.pressure)}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2">
-                    <span>Cloud cover</span>
-                    <span>{weather.current.cloudCover}%</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2">
-                    <span>Precipitation</span>
-                    <span>{weather.current.precipitation.toFixed(1)} mm</span>
-                  </div>
-                </div>
-              ) : null}
-            </div>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-            <div className="glass-surface rounded-3xl border border-white/10 p-5">
+          <section className="glass-surface rounded-3xl border border-white/10 p-5">
+            <div>
               <div className="mb-5 flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.14em] text-slate-400">7-day outlook</p>
@@ -738,64 +709,113 @@ export function WeatherDashboard() {
                 </div>
                 <MoonStar className="h-4 w-4 text-sky-300" />
               </div>
-              <div className="space-y-3">
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2">
                 {weather?.daily.map((day, index) => (
-                  <div key={`${day.date}-${index}`} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/20 p-3">
-                    <div className="w-16 text-sm text-slate-300">{new Date(day.date).toLocaleDateString([], { weekday: "short" })}</div>
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-800/70 text-sky-200">
-                      {day.weatherCode >= 80 ? <CloudRain className="h-5 w-5" /> : day.weatherCode >= 3 ? <Cloud className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+                  <article
+                    key={`${day.date}-${index}`}
+                    className="min-w-[118px] flex-1 rounded-xl border border-white/10 bg-slate-950/20 p-2.5 sm:min-w-[130px]"
+                  >
+                    <p className="text-xs font-medium text-slate-200 sm:text-sm">
+                      {new Date(`${day.date}T12:00:00`).toLocaleDateString([], { weekday: "short" })}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      {new Date(`${day.date}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" })}
+                    </p>
+                    <div className="my-2 flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800/70 text-sky-200">
+                      {day.weatherCode >= 80 ? <CloudRain className="h-4 w-4" /> : day.weatherCode >= 3 ? <Cloud className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm text-slate-200">{getWeatherCondition(day.weatherCode)}</p>
-                      <p className="text-xs text-slate-400">{day.precipitationProbability}% chance of rain</p>
+                    <p className="min-h-8 text-[11px] leading-4 text-slate-300">
+                      {getWeatherCondition(day.weatherCode)}
+                    </p>
+                    <div className="mt-1.5 flex items-baseline gap-1.5">
+                      <span className="text-sm font-semibold text-white">{formatTemperature(resolveUnits(day.tempMax), unit)}</span>
+                      <span className="text-xs text-slate-400">{formatTemperature(resolveUnits(day.tempMin), unit)}</span>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-white">{formatTemperature(resolveUnits(day.tempMax), unit)}</p>
-                      <p className="text-sm text-slate-400">{formatTemperature(resolveUnits(day.tempMin), unit)}</p>
-                    </div>
-                  </div>
+                    <p className="mt-1.5 text-[10px] leading-4 text-slate-400">
+                      {day.precipitationProbability}% rain · {formatWindSpeed(day.windSpeed, "km/h")}
+                    </p>
+                  </article>
                 ))}
               </div>
             </div>
+          </section>
 
-            <div className="glass-surface rounded-3xl border border-white/10 p-5">
-              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Air quality</p>
-              <h2 className="mt-2 text-xl font-semibold text-white">AQI overview</h2>
-              {airQuality ? (
-                <div className="mt-5 space-y-4">
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-300">US AQI</span>
-                      <span className={`font-semibold ${getAirQualityStatus(airQuality.current.usAqi).color}`}>
-                        {getAirQualityStatus(airQuality.current.usAqi).label}
-                      </span>
-                    </div>
-                    <div className="mt-3 text-3xl font-semibold text-white">{airQuality.current.usAqi ?? "—"}</div>
+          <section className="grid items-stretch gap-6 md:grid-cols-2">
+              <div className="glass-surface min-w-0 rounded-3xl border border-white/10 p-5">
+                <div className="mb-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Highlights</p>
+                    <h2 className="mt-2 text-xl font-semibold text-white">Today</h2>
                   </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-white/10 bg-slate-950/20 p-3">
-                      <p className="text-xs text-slate-400">PM2.5</p>
-                      <p className="mt-2 text-lg font-semibold text-white">{airQuality.current.pm2_5 ?? "—"}</p>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-slate-950/20 p-3">
-                      <p className="text-xs text-slate-400">PM10</p>
-                      <p className="mt-2 text-lg font-semibold text-white">{airQuality.current.pm10 ?? "—"}</p>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-slate-950/20 p-3">
-                      <p className="text-xs text-slate-400">NO₂</p>
-                      <p className="mt-2 text-lg font-semibold text-white">{airQuality.current.nitrogenDioxide ?? "—"}</p>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-slate-950/20 p-3">
-                      <p className="text-xs text-slate-400">O₃</p>
-                      <p className="mt-2 text-lg font-semibold text-white">{airQuality.current.ozone ?? "—"}</p>
-                    </div>
-                  </div>
+                  <Zap className="h-4 w-4 text-amber-300" />
                 </div>
-              ) : (
-                <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-4 text-sm text-slate-400">Air quality data is currently unavailable for this location.</div>
-              )}
-            </div>
+                {weather ? (
+                  <div className="grid gap-3 text-sm text-slate-200">
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/20 px-3 py-3">
+                      <span>UV Index</span>
+                      <span className="font-medium">{weather.current.uvIndex ?? "Unavailable"}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/20 px-3 py-3">
+                      <span>Pressure</span>
+                      <span className="font-medium">{formatPressure(weather.current.pressure)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/20 px-3 py-3">
+                      <span>Cloud cover</span>
+                      <span className="font-medium">{weather.current.cloudCover}%</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/20 px-3 py-3">
+                      <span>Precipitation</span>
+                      <span className="font-medium">{weather.current.precipitation.toFixed(1)} mm</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400">Highlights are unavailable until weather data loads.</p>
+                )}
+              </div>
+
+              <div className="glass-surface min-w-0 rounded-3xl border border-white/10 p-5">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Air quality</p>
+                <h2 className="mt-2 text-xl font-semibold text-white">AQI overview</h2>
+                {airQuality ? (
+                  <div className="mt-5 space-y-4">
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-slate-300">US AQI</span>
+                        <span className={`font-semibold ${getAirQualityStatus(airQuality.current.usAqi).color}`}>
+                          {getAirQualityStatus(airQuality.current.usAqi).label}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-3xl font-semibold text-white">{airQuality.current.usAqi ?? "Unavailable"}</div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="min-w-0 rounded-xl border border-white/10 bg-slate-950/20 p-3">
+                        <p className="text-xs text-slate-400">PM2.5 (µg/m³)</p>
+                        <p className="mt-2 break-words text-lg font-semibold text-white">{airQuality.current.pm2_5 ?? "Unavailable"}</p>
+                      </div>
+                      <div className="min-w-0 rounded-xl border border-white/10 bg-slate-950/20 p-3">
+                        <p className="text-xs text-slate-400">PM10 (µg/m³)</p>
+                        <p className="mt-2 break-words text-lg font-semibold text-white">{airQuality.current.pm10 ?? "Unavailable"}</p>
+                      </div>
+                      <div className="min-w-0 rounded-xl border border-white/10 bg-slate-950/20 p-3">
+                        <p className="text-xs text-slate-400">NO₂ (µg/m³)</p>
+                        <p className="mt-2 break-words text-lg font-semibold text-white">{airQuality.current.nitrogenDioxide ?? "Unavailable"}</p>
+                      </div>
+                      <div className="min-w-0 rounded-xl border border-white/10 bg-slate-950/20 p-3">
+                        <p className="text-xs text-slate-400">O₃ (µg/m³)</p>
+                        <p className="mt-2 break-words text-lg font-semibold text-white">{airQuality.current.ozone ?? "Unavailable"}</p>
+                      </div>
+                    </div>
+                    <p className="text-xs leading-relaxed text-slate-400">
+                      Model-based air-quality estimates; they may differ from local monitoring stations.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-4 text-sm text-slate-400">
+                    Air quality data is currently unavailable for this location.
+                  </div>
+                )}
+              </div>
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1fr_1.3fr]">
