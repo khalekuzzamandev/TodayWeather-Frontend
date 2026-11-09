@@ -666,7 +666,7 @@ export function WeatherDashboard() {
                       </div>
 
                       <div className="flex flex-wrap items-end gap-4">
-                        <div className="text-6xl font-semibold tracking-tight sm:text-7xl">
+                        <div className="text-6xl font-bold tracking-tight sm:text-7xl">
                           {formatTemperature(resolveUnits(weather.current.temperature), unit)}
                         </div>
                         <div className="pb-2 text-slate-100/90">

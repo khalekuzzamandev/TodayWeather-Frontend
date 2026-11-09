@@ -36,7 +36,8 @@
 }
 
 .theme-light .weather-hero {
-  background: linear-gradient(135deg, rgba(218, 244, 255, 0.9), rgba(231, 236, 255, 0.8));
+  border-color: rgb(15 23 42 / 10%);
+  background: #fff;
   color: #0f172a;
 }
 
@@ -47,6 +48,24 @@
 .theme-light .text-white,
 .theme-light .text-slate-50 {
   color: #0f172a !important;
+}
+
+.theme-light .weather-hero [class*="text-"] {
+  color: #0f172a !important;
+}
+
+.theme-light .weather-hero input[role="combobox"] {
+  border-color: rgb(15 23 42 / 14%);
+  background: #fff;
+  color: #0f172a !important;
+}
+
+.theme-light .weather-hero input[role="combobox"]::placeholder {
+  color: #64748b;
+}
+
+.theme-light .weather-hero [role="listbox"] [class*="text-"] {
+  color: #f4f7ff !important;
 }
 
 * {
@@ -192,6 +211,16 @@ a {
   background:
     radial-gradient(ellipse at 78% 45%, rgb(111 96 166 / 18%), transparent 48%),
     linear-gradient(115deg, rgb(12 17 34 / 98%), rgb(8 11 25 / 96%));
+}
+
+.theme-light .weather-hero .weather-hero-glow {
+  background: linear-gradient(135deg, #fff 0%, #f8fbff 100%);
+}
+
+.theme-light .weather-hero .weather-hero-weather,
+.theme-light .weather-hero .weather-hero-stars,
+.theme-light .weather-hero .weather-hero-orb {
+  opacity: 0.08;
 }
 
 .weather-hero-weather {
