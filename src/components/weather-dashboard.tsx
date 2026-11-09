@@ -408,13 +408,10 @@ export function WeatherDashboard() {
     );
   };
 
-  const searchManually = () => {
+  const cancelLocationDialog = () => {
     setLocationDialog(null);
     setSettingsInstructions(null);
     setError(null);
-    window.setTimeout(() => {
-      searchContainerRef.current?.querySelector("input")?.focus();
-    }, 0);
   };
 
   useEffect(
@@ -1037,10 +1034,10 @@ export function WeatherDashboard() {
                 <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
                   <button
                     type="button"
-                    onClick={searchManually}
+                    onClick={cancelLocationDialog}
                     className="rounded-full border border-white/15 px-5 py-3 text-sm text-slate-200 transition hover:bg-white/5"
                   >
-                    Search Manually
+                    Cancel
                   </button>
                   <button
                     type="button"
