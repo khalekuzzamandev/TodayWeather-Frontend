@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TodayWeather
 
-## Getting Started
+TodayWeather is a premium global weather dashboard built with Next.js, TypeScript, Tailwind CSS, Framer Motion, and live Open-Meteo data. It supports city search, geolocation, current conditions, forecasts, air quality, favorites, and map-based location views.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Global city search with live Open-Meteo geocoding
+- Real-time current weather, hourly forecast, and 7-day outlook
+- Dark/light theme toggle and Celsius/Fahrenheit temperature switch
+- Air quality insights using Open-Meteo AQI data
+- Favorites saved locally in the browser
+- Map view with OpenStreetMap tiles and selected city marker
+- Responsive layout for mobile and desktop screens
+- Graceful loading and error states for API failures
+
+## Tech stack
+
+- Next.js App Router
+- React 19 + TypeScript
+- Tailwind CSS
+- Framer Motion
+- Lucide Icons
+- Leaflet + react-leaflet for map rendering
+- Open-Meteo API for weather, geocoding, and air quality
+
+## Project structure
+
+```text
+src/
+  app/                  # App routes and global styles
+  components/           # Main dashboards and UI sections
+  lib/                  # Weather API clients and format helpers
+public/                 # Static assets
+README.md               # Project overview
+docs/
+  API_DOCUMENTATION.md
+  PROJECT_STRUCTURE.md
+  SETUP_GUIDE.md
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Running locally
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Then open http://localhost:3000.
 
-## Learn More
+## Production checks
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run lint
+npm run build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment usage
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This app uses public Open-Meteo endpoints and does not require an API key for basic usage.
 
-## Deploy on Vercel
+## Data sources and attribution
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Open-Meteo geocoding: https://geocoding-api.open-meteo.com
+- Open-Meteo forecast: https://api.open-meteo.com
+- Open-Meteo air quality: https://air-quality-api.open-meteo.com
+- OpenStreetMap tiles: https://www.openstreetmap.org/copyright
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Notes
+
+- Favorite cities are persisted in local browser storage.
+- Weather and air-quality responses are loaded live from official APIs.
+- If an external provider is unavailable, the UI shows an honest unavailable state rather than fabricated data.

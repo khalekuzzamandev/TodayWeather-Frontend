@@ -1,0 +1,805 @@
+"use client";
+
+import { AnimatePresence, motion } from "framer-motion";
+import { Cloud, CloudRain, Compass, Droplets, Heart, LocateFixed, LoaderCircle, MapPinned, MoonStar, Search, Sun, Thermometer, Wind, Zap } from "lucide-react";
+import Link from "next/link";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import {
+  celsiusToFahrenheit,
+  fetchAirQuality,
+  fetchWeatherSnapshot,
+  formatPressure,
+  formatTemperature,
+  formatVisibility,
+  formatWindSpeed,
+  getAirQualityStatus,
+  getWeatherCondition,
+  getWeatherTone,
+  searchLocations,
+  type AirQualitySnapshot,
+  type LocationResult,
+  type TemperatureUnit,
+  type WeatherSnapshot,
+} from "@/lib/weather";
+import dynamic from "next/dynamic";
+
+const WeatherMap = dynamic(
+  () => import("@/components/weather-map").then((mod) => mod.WeatherMap),
+  { ssr: false },
+);
+
+const defaultLocation: LocationResult = {
+  id: 1,
+  name: "New York",
+  country: "United States",
+  admin1: "New York",
+  latitude: 40.7128,
+  longitude: -74.006,
+  timezone: "America/New_York",
+};
+
+const navItems = [
+  { label: "Home", href: "/" },
+  { label: "Forecast", href: "/forecast" },
+  { label: "Weather Map", href: "/map" },
+  { label: "Air Quality", href: "/air-quality" },
+  { label: "Compare", href: "/compare" },
+  { label: "Favorites", href: "/favorites" },
+];
+
+function highlightMatch(text: string, query: string) {
+  const start = text.toLocaleLowerCase().indexOf(query.trim().toLocaleLowerCase());
+  if (start < 0 || !query.trim()) return text;
+
+  const end = start + query.trim().length;
+  return (
+    <>
+      {text.slice(0, start)}
+      <mark className="rounded bg-sky-300/20 text-inherit">{text.slice(start, end)}</mark>
+      {text.slice(end)}
+    </>
+  );
+}
+
+function countryFlag(countryCode?: string) {
+  if (!countryCode || !/^[a-z]{2}$/i.test(countryCode)) return null;
+
+  return String.fromCodePoint(
+    ...countryCode
+      .toUpperCase()
+      .split("")
+      .map((character) => character.charCodeAt(0) + 127397),
+  );
+}
+
+export function WeatherDashboard() {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [unit, setUnit] = useState<TemperatureUnit>("C");
+  const [query, setQuery] = useState("New York");
+  const [searchResults, setSearchResults] = useState<LocationResult[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchCompleted, setSearchCompleted] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const [selectedLocation, setSelectedLocation] = useState<LocationResult>(defaultLocation);
+  const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
+  const [airQuality, setAirQuality] = useState<AirQualitySnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<LocationResult[]>([]);
+  const [preferencesReady, setPreferencesReady] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setTheme(
+        window.localStorage.getItem("todayweather-theme") === "light"
+          ? "light"
+          : "dark",
+      );
+
+      try {
+        const storedFavorites: unknown = JSON.parse(
+          window.localStorage.getItem("todayweather-favorites") ?? "[]",
+        );
+        if (Array.isArray(storedFavorites)) {
+          setFavorites(
+            storedFavorites.filter(
+              (item): item is LocationResult =>
+                typeof item?.name === "string" &&
+                typeof item?.country === "string" &&
+                typeof item?.latitude === "number" &&
+                typeof item?.longitude === "number",
+            ),
+          );
+        }
+      } catch {
+        setFavorites([]);
+      }
+
+      setPreferencesReady(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    window.localStorage.setItem("todayweather-theme", theme);
+    window.localStorage.setItem("todayweather-favorites", JSON.stringify(favorites));
+  }, [favorites, preferencesReady, theme]);
+
+  useEffect(() => {
+    const trimmedQuery = query.trim();
+    if (!searchOpen || trimmedQuery.length < 2) return;
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setSearchLoading(true);
+      setSearchCompleted(false);
+      setSearchError(null);
+      void searchLocations(trimmedQuery, controller.signal)
+        .then((results) => {
+          if (controller.signal.aborted) return;
+          setSearchResults(results);
+          setSearchCompleted(true);
+          setActiveSearchIndex(-1);
+        })
+        .catch((searchFailure: unknown) => {
+          if (controller.signal.aborted) return;
+          setSearchResults([]);
+          setSearchCompleted(true);
+          setSearchError(
+            searchFailure instanceof Error
+              ? searchFailure.message
+              : "Location search is temporarily unavailable. Please try again.",
+          );
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearchLoading(false);
+        });
+    }, 400);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !searchContainerRef.current?.contains(event.target)
+      ) {
+        setSearchOpen(false);
+        setActiveSearchIndex(-1);
+      }
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [searchOpen]);
+
+  const loadWeather = useCallback(async (location: LocationResult) => {
+    setLoading(true);
+    setError(null);
+    setSelectedLocation(location);
+
+    try {
+      const nextWeather = await fetchWeatherSnapshot({
+        id: location.id,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        name: location.name,
+        country: location.country,
+        admin1: location.admin1,
+        timezone: location.timezone,
+      });
+      const nextAirQuality = await fetchAirQuality(location.latitude, location.longitude).catch(() => null);
+
+      window.localStorage.setItem(
+        "todayweather-selected-location",
+        JSON.stringify(nextWeather.location),
+      );
+      setWeather(nextWeather);
+      setAirQuality(nextAirQuality);
+      setQuery(location.name);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load weather data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadWeather(defaultLocation);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadWeather]);
+
+  const activeCondition = weather ? getWeatherTone(weather.current.weatherCode) : "cloudy";
+
+  const hourlyCards = useMemo(() => weather?.hourly.slice(0, 8) ?? [], [weather]);
+  const comparisonCities = useMemo(
+    () => [
+      { name: "New York", temp: 22, condition: "Sunny" },
+      { name: "Paris", temp: 18, condition: "Cloudy" },
+      { name: "Tokyo", temp: 26, condition: "Clear" },
+      { name: "London", temp: 15, condition: "Rain" },
+    ],
+    [],
+  );
+
+  const toggleFavorite = (location: LocationResult) => {
+    setFavorites((current) => {
+      const exists = current.some((item) => item.id === location.id);
+      const next = exists ? current.filter((item) => item.id !== location.id) : [...current, location];
+      return next;
+    });
+  };
+
+  const selectLocation = (location: LocationResult) => {
+    setSearchOpen(false);
+    setSearchResults([]);
+    setSearchLoading(false);
+    setSearchCompleted(false);
+    setSearchError(null);
+    setActiveSearchIndex(-1);
+    setQuery(location.name);
+    void loadWeather(location);
+  };
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      setSearchOpen(false);
+      setActiveSearchIndex(-1);
+      return;
+    }
+
+    if (!searchOpen || searchResults.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSearchIndex((index) => (index + 1) % searchResults.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSearchIndex(
+        (index) => (index <= 0 ? searchResults.length - 1 : index - 1),
+      );
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const location = searchResults[activeSearchIndex] ?? searchResults[0];
+      selectLocation(location);
+    }
+  };
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not available in this browser.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = {
+          id: Date.now(),
+          name: "Current location",
+          country: "Local",
+          admin1: "Current",
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        };
+        void loadWeather(coords);
+      },
+      () => {
+        setError("Location permission was denied. Search for a city to continue.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  const resolveUnits = (value: number) => (unit === "F" ? celsiusToFahrenheit(value) : value);
+
+  return (
+    <div className={theme === "light" ? "theme-light" : "theme-dark"}>
+      <div className="mx-auto min-h-screen max-w-7xl px-4 pb-16 pt-6 text-slate-50 sm:px-6 lg:px-8">
+        <header className="glass-surface sticky top-4 z-30 mb-6 rounded-2xl border border-white/10 px-4 py-3 sm:px-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-300 shadow-lg shadow-sky-500/20">
+                <Sun className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold tracking-tight">TodayWeather</p>
+                <p className="text-xs text-slate-400">Your World. Your Weather.</p>
+              </div>
+            </div>
+
+            <nav className="flex flex-wrap items-center gap-2 text-sm text-slate-200">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`rounded-full px-3 py-1.5 transition ${item.href === "/" ? "bg-sky-500/15 text-sky-200" : "text-slate-300 hover:bg-white/5"}`}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+
+            <div className="flex items-center gap-2 self-start lg:self-auto">
+              <div className="flex items-center rounded-full border border-slate-700 bg-slate-900/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => setUnit("C")}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${unit === "C" ? "bg-sky-500 text-white" : "text-slate-300"}`}
+                >
+                  °C
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnit("F")}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${unit === "F" ? "bg-sky-500 text-white" : "text-slate-300"}`}
+                >
+                  °F
+                </button>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Toggle theme"
+                onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+                className="rounded-full border border-slate-700 bg-slate-900/60 p-2 text-slate-200"
+              >
+                {theme === "dark" ? "☀️" : "🌙"}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="space-y-6">
+          <section
+            className="weather-hero weather-hero-enter relative isolate z-10 rounded-[28px] border border-white/10 p-5 sm:p-6 lg:p-8"
+            data-condition={activeCondition}
+          >
+            <div className="weather-hero-glow absolute inset-0 rounded-[28px]" />
+            <div className="weather-hero-weather absolute inset-0 rounded-[28px]" />
+            <div className="weather-hero-orb absolute rounded-full" />
+            <div className="weather-hero-stars absolute inset-0" />
+
+            <div className="relative z-10">
+              <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div ref={searchContainerRef} className="relative z-50 max-w-xl flex-1">
+                  <Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-slate-300" />
+                  <input
+                    value={query}
+                    onChange={(event) => {
+                      const nextQuery = event.target.value;
+                      setQuery(nextQuery);
+                      setSearchResults([]);
+                      setSearchError(null);
+                      setSearchCompleted(false);
+                      setActiveSearchIndex(-1);
+                      setSearchOpen(nextQuery.trim().length >= 2);
+                    }}
+                    onKeyDown={handleSearchKeyDown}
+                    aria-label="Search city"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded={searchOpen}
+                    aria-controls="location-search-results"
+                    aria-activedescendant={
+                      activeSearchIndex >= 0
+                        ? `location-option-${searchResults[activeSearchIndex]?.id}`
+                        : undefined
+                    }
+                    placeholder="Search a city or country"
+                    className="h-12 w-full rounded-full border border-white/10 bg-slate-950/30 pl-11 pr-12 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
+                  />
+                  {searchLoading ? (
+                    <LoaderCircle
+                      aria-label="Searching locations"
+                      className="absolute right-4 top-3.5 h-4 w-4 animate-spin text-sky-300"
+                    />
+                  ) : null}
+
+                  <AnimatePresence>
+                    {searchOpen &&
+                    (searchLoading || searchCompleted || searchError) ? (
+                      <motion.div
+                        key="location-search-results"
+                        id="location-search-results"
+                        role="listbox"
+                        aria-label="Location suggestions"
+                        initial={{ opacity: 0, y: -6, scale: 0.99 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -4, scale: 0.99 }}
+                        transition={{ duration: 0.14, ease: "easeOut" }}
+                        className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-[100] max-h-80 overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl shadow-slate-950/50 backdrop-blur-xl"
+                      >
+                        {searchLoading ? (
+                          <div
+                            role="status"
+                            className="px-3 py-3 text-sm text-slate-300"
+                          >
+                            Searching locations…
+                          </div>
+                        ) : searchError ? (
+                          <div
+                            role="status"
+                            className="px-3 py-3 text-sm text-rose-200"
+                          >
+                            {searchError}
+                          </div>
+                        ) : searchResults.length === 0 ? (
+                          <div
+                            role="status"
+                            className="px-3 py-3 text-sm text-slate-300"
+                          >
+                            No locations found
+                          </div>
+                        ) : (
+                          searchResults.map((result, index) => {
+                            const region = result.admin1;
+                            const flag = countryFlag(result.country_code);
+                            const secondary = [region, result.country]
+                              .filter(Boolean)
+                              .join(", ");
+
+                            return (
+                              <button
+                                key={`${result.id}-${result.name}-${result.latitude}-${result.longitude}`}
+                                id={`location-option-${result.id}`}
+                                type="button"
+                                role="option"
+                                aria-selected={activeSearchIndex === index}
+                                onPointerDown={(event) => event.preventDefault()}
+                                onMouseEnter={() => setActiveSearchIndex(index)}
+                                onClick={() => selectLocation(result)}
+                                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-150 ${
+                                  activeSearchIndex === index
+                                    ? "bg-sky-400/15"
+                                    : "hover:bg-white/[0.07]"
+                                }`}
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/5 text-lg"
+                                >
+                                  {flag ?? <MapPinned className="h-4 w-4 text-sky-300" />}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-medium text-white">
+                                    {highlightMatch(result.name, query)}
+                                  </span>
+                                  {secondary ? (
+                                    <span className="block truncate text-xs text-slate-400">
+                                      {highlightMatch(secondary, query)}
+                                    </span>
+                                  ) : null}
+                                </span>
+                                <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-sky-300">
+                                  {result.country_code ?? ""}
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={useMyLocation}
+                    className="inline-flex items-center gap-2 rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 text-sm text-sky-100 hover:bg-sky-500/20"
+                  >
+                    <LocateFixed className="h-4 w-4" />
+                    Use my location
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleFavorite(selectedLocation)}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 hover:bg-white/10"
+                  >
+                    <Heart className={`h-4 w-4 ${favorites.some((item) => item.id === selectedLocation.id) ? "fill-rose-500 text-rose-400" : ""}`} />
+                    Favorite
+                  </button>
+                </div>
+              </div>
+
+              {error ? (
+                <div className="mb-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{error}</div>
+              ) : null}
+
+              {loading && weather === null ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/40 px-4 py-4 text-slate-200">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+                  Loading live weather conditions…
+                </div>
+              ) : weather ? (
+                <div className="grid gap-6 xl:grid-cols-[1.5fr_0.85fr]">
+                  <div>
+                    <div className="mb-3 flex items-center gap-2 text-sky-100/90">
+                      <MapPinned className="h-4 w-4" />
+                      <span className="text-sm">{weather.location.name}, {weather.location.country}</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-end gap-4">
+                      <div className="text-6xl font-semibold tracking-tight sm:text-7xl">
+                        {formatTemperature(resolveUnits(weather.current.temperature), unit)}
+                      </div>
+                      <div className="pb-2 text-slate-100/90">
+                        <p className="text-lg font-medium">{getWeatherCondition(weather.current.weatherCode)}</p>
+                        <p className="text-sm text-slate-200/80">Feels like {formatTemperature(resolveUnits(weather.current.feelsLike), unit)}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap gap-3 text-sm text-slate-200/85">
+                      <div className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1.5">Humidity {weather.current.humidity}%</div>
+                      <div className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1.5">Wind {formatWindSpeed(resolveUnits(weather.current.windSpeed), "km/h")}</div>
+                      <div className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1.5">Pressure {formatPressure(weather.current.pressure)}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
+                      <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Timezone</p>
+                      <p className="mt-2 text-lg font-medium text-white">{weather.timezone}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
+                      <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Updated</p>
+                      <p className="mt-2 text-lg font-medium text-white">{new Date(weather.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4 sm:col-span-2 xl:col-span-1">
+                      <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Sunrise / Sunset</p>
+                      <p className="mt-2 text-lg font-medium text-white">{weather.sunrise ? new Date(weather.sunrise).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"} / {weather.sunset ? new Date(weather.sunset).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {weather
+              ? [
+                  { label: "Feels like", value: formatTemperature(resolveUnits(weather.current.feelsLike), unit), icon: Thermometer },
+                  { label: "Humidity", value: `${weather.current.humidity}%`, icon: Droplets },
+                  { label: "Wind", value: formatWindSpeed(weather.current.windSpeed, "km/h"), icon: Wind },
+                  { label: "Visibility", value: formatVisibility(weather.current.visibility), icon: Compass },
+                ].map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="glass-surface rounded-2xl border border-white/10 p-4">
+                    <div className="mb-3 flex items-center justify-between text-slate-300">
+                      <span className="text-sm">{label}</span>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="text-2xl font-semibold text-white">{value}</div>
+                  </div>
+                ))
+              : null}
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+            <div className="glass-surface rounded-3xl border border-white/10 p-5">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Hourly forecast</p>
+                  <h2 className="mt-2 text-xl font-semibold text-white">Next 24 hours</h2>
+                </div>
+                <button type="button" className="text-sm text-sky-300">View full forecast</button>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-2">
+                {hourlyCards.map((item, index) => (
+                  <div
+                    key={`${item.time}-${index}`}
+                    className={`min-w-[130px] rounded-2xl border p-3 ${index === 0 ? "border-sky-400/50 bg-sky-500/10" : "border-white/10 bg-slate-950/20"}`}
+                  >
+                    <p className="text-xs text-slate-300">{new Date(item.time).toLocaleTimeString([], { hour: "numeric" })}</p>
+                    <div className="my-3 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-800/60 text-sky-200">
+                      {item.weatherCode >= 80 ? <CloudRain className="h-5 w-5" /> : item.weatherCode >= 3 ? <Cloud className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+                    </div>
+                    <p className="text-xl font-semibold text-white">{formatTemperature(resolveUnits(item.temperature), unit)}</p>
+                    <p className="mt-2 text-xs text-slate-300">{item.precipitationProbability}% rain</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="glass-surface rounded-3xl border border-white/10 p-5">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Highlights</p>
+                  <h2 className="mt-2 text-xl font-semibold text-white">Today</h2>
+                </div>
+                <Zap className="h-4 w-4 text-amber-300" />
+              </div>
+              {weather ? (
+                <div className="space-y-3 text-sm text-slate-200">
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2">
+                    <span>UV Index</span>
+                    <span>{weather.current.uvIndex ?? "—"}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2">
+                    <span>Pressure</span>
+                    <span>{formatPressure(weather.current.pressure)}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2">
+                    <span>Cloud cover</span>
+                    <span>{weather.current.cloudCover}%</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2">
+                    <span>Precipitation</span>
+                    <span>{weather.current.precipitation.toFixed(1)} mm</span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="glass-surface rounded-3xl border border-white/10 p-5">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-400">7-day outlook</p>
+                  <h2 className="mt-2 text-xl font-semibold text-white">Forecast</h2>
+                </div>
+                <MoonStar className="h-4 w-4 text-sky-300" />
+              </div>
+              <div className="space-y-3">
+                {weather?.daily.map((day, index) => (
+                  <div key={`${day.date}-${index}`} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/20 p-3">
+                    <div className="w-16 text-sm text-slate-300">{new Date(day.date).toLocaleDateString([], { weekday: "short" })}</div>
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-800/70 text-sky-200">
+                      {day.weatherCode >= 80 ? <CloudRain className="h-5 w-5" /> : day.weatherCode >= 3 ? <Cloud className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm text-slate-200">{getWeatherCondition(day.weatherCode)}</p>
+                      <p className="text-xs text-slate-400">{day.precipitationProbability}% chance of rain</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-white">{formatTemperature(resolveUnits(day.tempMax), unit)}</p>
+                      <p className="text-sm text-slate-400">{formatTemperature(resolveUnits(day.tempMin), unit)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="glass-surface rounded-3xl border border-white/10 p-5">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Air quality</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">AQI overview</h2>
+              {airQuality ? (
+                <div className="mt-5 space-y-4">
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300">US AQI</span>
+                      <span className={`font-semibold ${getAirQualityStatus(airQuality.current.usAqi).color}`}>
+                        {getAirQualityStatus(airQuality.current.usAqi).label}
+                      </span>
+                    </div>
+                    <div className="mt-3 text-3xl font-semibold text-white">{airQuality.current.usAqi ?? "—"}</div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-slate-950/20 p-3">
+                      <p className="text-xs text-slate-400">PM2.5</p>
+                      <p className="mt-2 text-lg font-semibold text-white">{airQuality.current.pm2_5 ?? "—"}</p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-slate-950/20 p-3">
+                      <p className="text-xs text-slate-400">PM10</p>
+                      <p className="mt-2 text-lg font-semibold text-white">{airQuality.current.pm10 ?? "—"}</p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-slate-950/20 p-3">
+                      <p className="text-xs text-slate-400">NO₂</p>
+                      <p className="mt-2 text-lg font-semibold text-white">{airQuality.current.nitrogenDioxide ?? "—"}</p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-slate-950/20 p-3">
+                      <p className="text-xs text-slate-400">O₃</p>
+                      <p className="mt-2 text-lg font-semibold text-white">{airQuality.current.ozone ?? "—"}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-4 text-sm text-slate-400">Air quality data is currently unavailable for this location.</div>
+              )}
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1fr_1.3fr]">
+            <div className="glass-surface rounded-3xl border border-white/10 p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Favorites</p>
+                  <h2 className="mt-2 text-xl font-semibold text-white">Saved cities</h2>
+                </div>
+                <Heart className="h-4 w-4 text-rose-400" />
+              </div>
+              <div className="space-y-2">
+                {favorites.length > 0 ? (
+                  favorites.map((city) => (
+                    <button
+                      key={`${city.id}-${city.name}`}
+                      type="button"
+                      onClick={() => void loadWeather(city)}
+                      className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-slate-950/20 px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/5"
+                    >
+                      <span>{city.name}</span>
+                      <span className="text-xs text-slate-400">{city.country}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-700 p-4 text-sm text-slate-400">Save a city from the search results to keep it here.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="glass-surface rounded-3xl border border-white/10 p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Weather map</p>
+                  <h2 className="mt-2 text-xl font-semibold text-white">Location view</h2>
+                </div>
+                <MapPinned className="h-4 w-4 text-sky-300" />
+              </div>
+              {weather ? (
+                <WeatherMap latitude={weather.location.latitude} longitude={weather.location.longitude} city={weather.location.name} />
+              ) : null}
+            </div>
+          </section>
+
+          <section className="glass-surface rounded-3xl border border-white/10 p-5">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">City comparison</p>
+                <h2 className="mt-2 text-xl font-semibold text-white">Compare climate snapshots</h2>
+              </div>
+              <Link href="/compare" className="text-sm text-sky-300">Open comparison</Link>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {comparisonCities.map((city) => (
+                <div key={city.name} className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
+                  <p className="text-sm text-slate-300">{city.name}</p>
+                  <div className="mt-3 flex items-end justify-between">
+                    <span className="text-3xl font-semibold text-white">{city.temp}°</span>
+                    <span className="rounded-full bg-sky-500/10 px-2 py-1 text-xs text-sky-200">{city.condition}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </main>
+
+        <footer className="mt-8 flex flex-col gap-3 border-t border-white/10 pt-6 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+          <p>© 2026 TodayWeather. Weather data from Open-Meteo.</p>
+          <div className="flex flex-wrap gap-4">
+            <Link href="/about">About</Link>
+            <Link href="/contact">Contact</Link>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
