@@ -602,54 +602,94 @@ export function WeatherDashboard() {
                 </div>
               ) : null}
 
-              {loading && weather === null ? (
-                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/40 px-4 py-4 text-slate-200">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-                  {requestingLocation
-                    ? "Waiting for location permission to show your local weather…"
-                    : "Loading live weather conditions…"}
-                </div>
-              ) : weather ? (
-                <div className="grid gap-6 xl:grid-cols-[1.5fr_0.85fr]">
-                  <div>
-                    <div className="mb-3 flex items-center gap-2 text-sky-100/90">
-                      <MapPinned className="h-4 w-4" />
-                      <span className="text-sm">{weather.location.name}, {weather.location.country}</span>
-                    </div>
-
-                    <div className="flex flex-wrap items-end gap-4">
-                      <div className="text-6xl font-semibold tracking-tight sm:text-7xl">
-                        {formatTemperature(resolveUnits(weather.current.temperature), unit)}
+              <div
+                className="grid gap-6 xl:grid-cols-[1.5fr_0.85fr]"
+                aria-busy={loading && !weather}
+              >
+                {weather ? (
+                  <>
+                    <div>
+                      <div className="mb-3 flex items-center gap-2 text-sky-100/90">
+                        <MapPinned className="h-4 w-4" />
+                        <span className="text-sm">{weather.location.name}, {weather.location.country}</span>
                       </div>
-                      <div className="pb-2 text-slate-100/90">
-                        <p className="text-lg font-medium">{getWeatherCondition(weather.current.weatherCode)}</p>
-                        <p className="text-sm text-slate-200/80">Feels like {formatTemperature(resolveUnits(weather.current.feelsLike), unit)}</p>
+
+                      <div className="flex flex-wrap items-end gap-4">
+                        <div className="text-6xl font-semibold tracking-tight sm:text-7xl">
+                          {formatTemperature(resolveUnits(weather.current.temperature), unit)}
+                        </div>
+                        <div className="pb-2 text-slate-100/90">
+                          <p className="text-lg font-medium">{getWeatherCondition(weather.current.weatherCode)}</p>
+                          <p className="text-sm text-slate-200/80">Feels like {formatTemperature(resolveUnits(weather.current.feelsLike), unit)}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap gap-3 text-sm text-slate-200/85">
+                        <div className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1.5">Humidity {weather.current.humidity}%</div>
+                        <div className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1.5">Wind {formatWindSpeed(weather.current.windSpeed, "km/h")}</div>
+                        <div className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1.5">Pressure {formatPressure(weather.current.pressure)}</div>
                       </div>
                     </div>
 
-                    <div className="mt-5 flex flex-wrap gap-3 text-sm text-slate-200/85">
-                      <div className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1.5">Humidity {weather.current.humidity}%</div>
-                      <div className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1.5">Wind {formatWindSpeed(resolveUnits(weather.current.windSpeed), "km/h")}</div>
-                      <div className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1.5">Pressure {formatPressure(weather.current.pressure)}</div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                      <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Timezone</p>
+                        <p className="mt-2 break-words text-lg font-medium text-white">{weather.timezone}</p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Updated</p>
+                        <p className="mt-2 text-lg font-medium text-white">{new Date(weather.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4 sm:col-span-2 xl:col-span-1">
+                        <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Sunrise / Sunset</p>
+                        <p className="mt-2 text-lg font-medium text-white">{weather.sunrise ? new Date(weather.sunrise).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"} / {weather.sunset ? new Date(weather.sunset).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</p>
+                      </div>
                     </div>
+                  </>
+                ) : loading ? (
+                  <>
+                    <div className="animate-pulse">
+                      <div className="mb-5 h-4 w-48 rounded bg-white/10" />
+                      <div className="flex flex-wrap items-end gap-4">
+                        <div className="h-16 w-32 rounded-xl bg-white/10 sm:h-20" />
+                        <div className="space-y-2 pb-2">
+                          <div className="h-5 w-32 rounded bg-white/10" />
+                          <div className="h-4 w-40 rounded bg-white/5" />
+                        </div>
+                      </div>
+                      <div className="mt-5 flex flex-wrap gap-3">
+                        {[24, 20, 22].map((width) => (
+                          <div
+                            key={width}
+                            className="h-8 rounded-full bg-white/10"
+                            style={{ width: `${width * 4}px` }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                      {[0, 1, 2].map((item) => (
+                        <div
+                          key={item}
+                          className="animate-pulse rounded-2xl border border-white/10 bg-slate-950/20 p-4"
+                        >
+                          <div className="h-3 w-24 rounded bg-white/10" />
+                          <div className="mt-3 h-6 w-40 max-w-full rounded bg-white/10" />
+                        </div>
+                      ))}
+                    </div>
+                    <p role="status" className="sr-only">
+                      {requestingLocation
+                        ? "Waiting for location permission to show your local weather."
+                        : "Loading live weather conditions."}
+                    </p>
+                  </>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/20 p-5 text-sm text-slate-300 xl:col-span-2">
+                    Current weather will appear here after you allow location access or select a city from search.
                   </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                    <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
-                      <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Timezone</p>
-                      <p className="mt-2 text-lg font-medium text-white">{weather.timezone}</p>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
-                      <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Updated</p>
-                      <p className="mt-2 text-lg font-medium text-white">{new Date(weather.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4 sm:col-span-2 xl:col-span-1">
-                      <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Sunrise / Sunset</p>
-                      <p className="mt-2 text-lg font-medium text-white">{weather.sunrise ? new Date(weather.sunrise).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"} / {weather.sunset ? new Date(weather.sunset).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</p>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+                )}
+              </div>
             </div>
           </section>
 
@@ -709,8 +749,11 @@ export function WeatherDashboard() {
                 </div>
                 <MoonStar className="h-4 w-4 text-sky-300" />
               </div>
-              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2">
-                {weather?.daily.map((day, index) => (
+              <div
+                className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2"
+                aria-busy={loading && !weather}
+              >
+                {weather?.daily.length ? weather.daily.map((day, index) => (
                   <article
                     key={`${day.date}-${index}`}
                     className="min-w-[118px] flex-1 rounded-xl border border-white/10 bg-slate-950/20 p-2.5 sm:min-w-[130px]"
@@ -735,7 +778,26 @@ export function WeatherDashboard() {
                       {day.precipitationProbability}% rain · {formatWindSpeed(day.windSpeed, "km/h")}
                     </p>
                   </article>
-                ))}
+                )) : loading ? (
+                  Array.from({ length: 7 }, (_, index) => (
+                    <article
+                      key={`forecast-loading-${index}`}
+                      aria-hidden="true"
+                      className="min-w-[118px] flex-1 animate-pulse rounded-xl border border-white/10 bg-slate-950/20 p-2.5 sm:min-w-[130px]"
+                    >
+                      <div className="h-4 w-12 rounded bg-white/10" />
+                      <div className="mt-1.5 h-3 w-16 rounded bg-white/5" />
+                      <div className="my-2 h-9 w-9 rounded-lg bg-white/10" />
+                      <div className="h-3 w-20 rounded bg-white/10" />
+                      <div className="mt-2 h-4 w-16 rounded bg-white/10" />
+                      <div className="mt-2 h-3 w-24 rounded bg-white/5" />
+                    </article>
+                  ))
+                ) : (
+                  <p className="w-full rounded-xl border border-dashed border-white/10 px-3 py-4 text-sm text-slate-400">
+                    The forecast is unavailable right now.
+                  </p>
+                )}
               </div>
             </div>
           </section>
