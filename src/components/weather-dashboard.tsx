@@ -22,6 +22,7 @@ import {
   getAirQualityStatus,
   getWeatherCondition,
   getWeatherTone,
+  reverseGeocodeLocation,
   searchLocations,
   type AirQualitySnapshot,
   type LocationResult,
@@ -34,16 +35,6 @@ const WeatherMap = dynamic(
   () => import("@/components/weather-map").then((mod) => mod.WeatherMap),
   { ssr: false },
 );
-
-const defaultLocation: LocationResult = {
-  id: 1,
-  name: "New York",
-  country: "United States",
-  admin1: "New York",
-  latitude: 40.7128,
-  longitude: -74.006,
-  timezone: "America/New_York",
-};
 
 const navItems = [
   { label: "Home", href: "/" },
@@ -82,7 +73,7 @@ function countryFlag(countryCode?: string) {
 export function WeatherDashboard() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [unit, setUnit] = useState<TemperatureUnit>("C");
-  const [query, setQuery] = useState("New York");
+  const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<LocationResult[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -90,13 +81,18 @@ export function WeatherDashboard() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
   const searchContainerRef = useRef<HTMLDivElement>(null);
-  const [selectedLocation, setSelectedLocation] = useState<LocationResult>(defaultLocation);
+  const [selectedLocation, setSelectedLocation] = useState<LocationResult | null>(null);
   const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
   const [airQuality, setAirQuality] = useState<AirQualitySnapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [requestingLocation, setRequestingLocation] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [locationNotice, setLocationNotice] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<LocationResult[]>([]);
   const [preferencesReady, setPreferencesReady] = useState(false);
+  const weatherRequestRef = useRef<AbortController | null>(null);
+  const initialLocationRequestedRef = useRef(false);
+  const geolocationRequestIdRef = useRef(0);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -196,21 +192,45 @@ export function WeatherDashboard() {
   }, [searchOpen]);
 
   const loadWeather = useCallback(async (location: LocationResult) => {
+    geolocationRequestIdRef.current += 1;
+    setRequestingLocation(false);
+    weatherRequestRef.current?.abort();
+    const controller = new AbortController();
+    weatherRequestRef.current = controller;
     setLoading(true);
     setError(null);
+    setLocationNotice(null);
     setSelectedLocation(location);
 
     try {
-      const nextWeather = await fetchWeatherSnapshot({
-        id: location.id,
-        latitude: location.latitude,
-        longitude: location.longitude,
-        name: location.name,
-        country: location.country,
-        admin1: location.admin1,
-        timezone: location.timezone,
-      });
-      const nextAirQuality = await fetchAirQuality(location.latitude, location.longitude).catch(() => null);
+      const currentCoordinates = location.name === "Current location";
+      const [weatherResponse, resolvedCity, nextAirQuality] = await Promise.all([
+        fetchWeatherSnapshot({
+          id: location.id,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          name: location.name,
+          country: location.country,
+          admin1: location.admin1,
+          timezone: location.timezone,
+        }, controller.signal),
+        currentCoordinates
+          ? reverseGeocodeLocation(
+              location.latitude,
+              location.longitude,
+              controller.signal,
+            ).catch(() => null)
+          : Promise.resolve(null),
+        fetchAirQuality(location.latitude, location.longitude).catch(() => null),
+      ]);
+      if (controller.signal.aborted) return;
+
+      const nextWeather = resolvedCity
+        ? {
+            ...weatherResponse,
+            location: { ...weatherResponse.location, ...resolvedCity },
+          }
+        : weatherResponse;
 
       window.localStorage.setItem(
         "todayweather-selected-location",
@@ -218,21 +238,20 @@ export function WeatherDashboard() {
       );
       setWeather(nextWeather);
       setAirQuality(nextAirQuality);
-      setQuery(location.name);
+      setSelectedLocation(nextWeather.location);
+      setQuery(nextWeather.location.name);
+      if (currentCoordinates && !resolvedCity) {
+        setLocationNotice(
+          "Weather is based on your current coordinates, but the city name could not be determined.",
+        );
+      }
     } catch (loadError) {
+      if (controller.signal.aborted) return;
       setError(loadError instanceof Error ? loadError.message : "Unable to load weather data");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadWeather(defaultLocation);
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [loadWeather]);
 
   const activeCondition = weather ? getWeatherTone(weather.current.weatherCode) : "cloudy";
 
@@ -256,6 +275,8 @@ export function WeatherDashboard() {
   };
 
   const selectLocation = (location: LocationResult) => {
+    geolocationRequestIdRef.current += 1;
+    setRequestingLocation(false);
     setSearchOpen(false);
     setSearchResults([]);
     setSearchLoading(false);
@@ -290,31 +311,64 @@ export function WeatherDashboard() {
     }
   };
 
-  const useMyLocation = () => {
+  const requestUserLocation = useCallback(() => {
+    const requestId = ++geolocationRequestIdRef.current;
+    setRequestingLocation(true);
     if (!navigator.geolocation) {
-      setError("Geolocation is not available in this browser.");
+      setRequestingLocation(false);
+      setLoading(false);
+      setError("Location access is not available in this browser. Search for a city instead.");
       return;
     }
 
+    setLoading(true);
+    setError(null);
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        if (requestId !== geolocationRequestIdRef.current) return;
+        setRequestingLocation(false);
         const coords = {
           id: Date.now(),
           name: "Current location",
-          country: "Local",
-          admin1: "Current",
+          country: "",
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         };
         void loadWeather(coords);
       },
-      () => {
-        setError("Location permission was denied. Search for a city to continue.");
+      (geoError) => {
+        if (requestId !== geolocationRequestIdRef.current) return;
+        setRequestingLocation(false);
+        setLoading(false);
+        if (geoError.code === geoError.PERMISSION_DENIED) {
+          setError("Location permission was denied. Allow location access in your browser settings or search for a city.");
+        } else if (geoError.code === geoError.TIMEOUT) {
+          setError("We could not get your location in time. Try again or search for a city.");
+        } else {
+          setError("Your current location is unavailable. Try again or search for a city.");
+        }
       },
-      { enableHighAccuracy: true, timeout: 10000 },
+      { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 },
     );
-  };
+  }, [loadWeather]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (initialLocationRequestedRef.current) return;
+      initialLocationRequestedRef.current = true;
+      requestUserLocation();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [requestUserLocation]);
+
+  useEffect(
+    () => () => {
+      weatherRequestRef.current?.abort();
+    },
+    [],
+  );
 
   const resolveUnits = (value: number) => (unit === "F" ? celsiusToFahrenheit(value) : value);
 
@@ -393,6 +447,11 @@ export function WeatherDashboard() {
                     value={query}
                     onChange={(event) => {
                       const nextQuery = event.target.value;
+                      if (nextQuery.trim()) {
+                        geolocationRequestIdRef.current += 1;
+                        setRequestingLocation(false);
+                        setLoading(false);
+                      }
                       setQuery(nextQuery);
                       setSearchResults([]);
                       setSearchError(null);
@@ -511,7 +570,7 @@ export function WeatherDashboard() {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={useMyLocation}
+                    onClick={requestUserLocation}
                     className="inline-flex items-center gap-2 rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 text-sm text-sky-100 hover:bg-sky-500/20"
                   >
                     <LocateFixed className="h-4 w-4" />
@@ -519,10 +578,13 @@ export function WeatherDashboard() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => toggleFavorite(selectedLocation)}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 hover:bg-white/10"
+                    onClick={() => {
+                      if (selectedLocation) toggleFavorite(selectedLocation);
+                    }}
+                    disabled={!selectedLocation}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Heart className={`h-4 w-4 ${favorites.some((item) => item.id === selectedLocation.id) ? "fill-rose-500 text-rose-400" : ""}`} />
+                    <Heart className={`h-4 w-4 ${favorites.some((item) => item.id === selectedLocation?.id) ? "fill-rose-500 text-rose-400" : ""}`} />
                     Favorite
                   </button>
                 </div>
@@ -531,11 +593,21 @@ export function WeatherDashboard() {
               {error ? (
                 <div className="mb-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{error}</div>
               ) : null}
+              {locationNotice ? (
+                <div
+                  role="status"
+                  className="mb-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+                >
+                  {locationNotice}
+                </div>
+              ) : null}
 
               {loading && weather === null ? (
                 <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/40 px-4 py-4 text-slate-200">
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-                  Loading live weather conditions…
+                  {requestingLocation
+                    ? "Waiting for location permission to show your local weather…"
+                    : "Loading live weather conditions…"}
                 </div>
               ) : weather ? (
                 <div className="grid gap-6 xl:grid-cols-[1.5fr_0.85fr]">
@@ -791,7 +863,7 @@ export function WeatherDashboard() {
         </main>
 
         <footer className="mt-8 flex flex-col gap-3 border-t border-white/10 pt-6 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-          <p>© 2026 TodayWeather. Weather data from Open-Meteo.</p>
+          <p>© 2026 TodayWeather. Weather from Open-Meteo; map and city lookup from OpenStreetMap.</p>
           <div className="flex flex-wrap gap-4">
             <Link href="/about">About</Link>
             <Link href="/contact">Contact</Link>

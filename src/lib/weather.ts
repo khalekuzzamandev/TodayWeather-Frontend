@@ -192,6 +192,68 @@ export async function searchLocations(
   }));
 }
 
+type ReverseGeocodingResponse = {
+  address?: {
+    city?: string;
+    town?: string;
+    village?: string;
+    municipality?: string;
+    suburb?: string;
+    county?: string;
+    state?: string;
+    country?: string;
+    country_code?: string;
+  };
+};
+
+export async function reverseGeocodeLocation(
+  latitude: number,
+  longitude: number,
+  signal?: AbortSignal,
+): Promise<Pick<LocationResult, "name" | "country" | "country_code" | "admin1">> {
+  const params = new URLSearchParams({
+    format: "jsonv2",
+    lat: String(latitude),
+    lon: String(longitude),
+    zoom: "10",
+    addressdetails: "1",
+  });
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?${params.toString()}`,
+    {
+      signal,
+      headers: { "Accept-Language": "en" },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Unable to resolve the current city name.");
+  }
+
+  const result = (await response.json()) as ReverseGeocodingResponse;
+  const address = result.address;
+  if (!address) {
+    throw new Error("No city name was returned for the current coordinates.");
+  }
+  const name =
+    address.city ??
+    address?.town ??
+    address?.village ??
+    address?.municipality ??
+    address?.suburb;
+
+  if (!name) {
+    throw new Error("No city name was returned for the current coordinates.");
+  }
+
+  return {
+    name,
+    country: address.country ?? "",
+    country_code: address.country_code?.toUpperCase(),
+    admin1: address.state ?? address.county,
+  };
+}
+
 export async function fetchWeatherSnapshot(location: {
   id?: number;
   latitude: number;
