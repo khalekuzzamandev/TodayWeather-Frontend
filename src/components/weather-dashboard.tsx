@@ -88,6 +88,12 @@ export function WeatherDashboard() {
   const [requestingLocation, setRequestingLocation] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
+  const [locationDialog, setLocationDialog] = useState<
+    "permission-denied" | "services-disabled" | null
+  >(null);
+  const [settingsInstructions, setSettingsInstructions] = useState<string | null>(
+    null,
+  );
   const [favorites, setFavorites] = useState<LocationResult[]>([]);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const weatherRequestRef = useRef<AbortController | null>(null);
@@ -194,6 +200,7 @@ export function WeatherDashboard() {
   const loadWeather = useCallback(async (location: LocationResult) => {
     geolocationRequestIdRef.current += 1;
     setRequestingLocation(false);
+    setLocationDialog(null);
     weatherRequestRef.current?.abort();
     const controller = new AbortController();
     weatherRequestRef.current = controller;
@@ -314,6 +321,8 @@ export function WeatherDashboard() {
   const requestUserLocation = useCallback(() => {
     const requestId = ++geolocationRequestIdRef.current;
     setRequestingLocation(true);
+    setLocationDialog(null);
+    setSettingsInstructions(null);
     if (!navigator.geolocation) {
       setRequestingLocation(false);
       setLoading(false);
@@ -342,9 +351,15 @@ export function WeatherDashboard() {
         setRequestingLocation(false);
         setLoading(false);
         if (geoError.code === geoError.PERMISSION_DENIED) {
-          setError("Location permission was denied. Allow location access in your browser settings or search for a city.");
+          setLocationDialog("permission-denied");
+          setSettingsInstructions(null);
+          setError("Location access is blocked. Allow it for this site in your browser or device settings, then select “Use my location” to try again.");
         } else if (geoError.code === geoError.TIMEOUT) {
           setError("We could not get your location in time. Try again or search for a city.");
+        } else if (geoError.code === geoError.POSITION_UNAVAILABLE) {
+          setLocationDialog("services-disabled");
+          setSettingsInstructions(null);
+          setError("Your device location may be turned off. Turn on location services, then select “Use my location” to try again.");
         } else {
           setError("Your current location is unavailable. Try again or search for a city.");
         }
@@ -362,6 +377,45 @@ export function WeatherDashboard() {
 
     return () => window.clearTimeout(timer);
   }, [requestUserLocation]);
+
+  const openLocationSettings = () => {
+    const userAgent = navigator.userAgent.toLowerCase();
+
+    if (userAgent.includes("windows")) {
+      setSettingsInstructions(
+        "If Windows Settings does not open, go to Settings > Privacy & security > Location and turn on Location services. Also allow location for this site in your browser settings.",
+      );
+      window.location.href = "ms-settings:privacy-location";
+      return;
+    }
+
+    if (userAgent.includes("android")) {
+      setSettingsInstructions(
+        "On your device, open Settings > Location and turn on Use location. Also allow location for this site in your browser settings. Then return here and select “Use my location”.",
+      );
+      return;
+    }
+
+    if (/iphone|ipad|ipod/.test(userAgent)) {
+      setSettingsInstructions(
+        "On your device, open Settings > Privacy & Security > Location Services, turn it on, and allow location for your browser. Then return here and select “Use my location”.",
+      );
+      return;
+    }
+
+    setSettingsInstructions(
+      "Open your device Settings, turn on Location Services, and allow location for your browser and this site. Then return here and select “Use my location”.",
+    );
+  };
+
+  const searchManually = () => {
+    setLocationDialog(null);
+    setSettingsInstructions(null);
+    setError(null);
+    window.setTimeout(() => {
+      searchContainerRef.current?.querySelector("input")?.focus();
+    }, 0);
+  };
 
   useEffect(
     () => () => {
@@ -943,6 +997,64 @@ export function WeatherDashboard() {
             </div>
           </section>
         </main>
+
+        <AnimatePresence>
+          {locationDialog ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-md"
+            >
+              <motion.section
+                initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.98 }}
+                transition={{ duration: 0.2 }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="location-dialog-title"
+                className="w-full max-w-lg rounded-3xl border border-[#DC2F02]/40 bg-slate-900/95 p-6 shadow-2xl shadow-black/40 sm:p-8"
+              >
+                <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#DC2F02]/15 text-[#DC2F02]">
+                  <LocateFixed className="h-7 w-7" aria-hidden="true" />
+                </div>
+                <h2 id="location-dialog-title" className="text-xl font-semibold text-white sm:text-2xl">
+                  {locationDialog === "permission-denied"
+                    ? "Allow Location Access"
+                    : "Your Device Location Is Off"}
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-slate-300">
+                  {locationDialog === "permission-denied"
+                    ? "Allow location access for this site in your browser settings and make sure Location Services is turned on. Browser permission and device location settings may need to be enabled separately."
+                    : "Please turn on Location Services on your device to get accurate weather updates for your current location."}
+                </p>
+                {settingsInstructions ? (
+                  <p role="status" className="mt-4 rounded-2xl border border-[#DC2F02]/30 bg-[#DC2F02]/10 p-4 text-sm leading-6 text-orange-100">
+                    {settingsInstructions}
+                  </p>
+                ) : null}
+                <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={searchManually}
+                    className="rounded-full border border-white/15 px-5 py-3 text-sm text-slate-200 transition hover:bg-white/5"
+                  >
+                    Search Manually
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openLocationSettings}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#DC2F02] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#c52902]"
+                  >
+                    <LocateFixed className="h-4 w-4" aria-hidden="true" />
+                    Turn On Location
+                  </button>
+                </div>
+              </motion.section>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         <footer className="mt-8 flex flex-col gap-3 border-t border-white/10 pt-6 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
           <p>© 2026 TodayWeather. Weather from Open-Meteo; map and city lookup from OpenStreetMap.</p>
